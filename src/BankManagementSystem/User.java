@@ -7,85 +7,100 @@ import java.sql.SQLException;
 import java.util.Scanner;
 
 public class User {
-    private Connection connection;
-    private Scanner sc ;
+    private final Connection connection;
+    private final Scanner scanner;
 
-
-    public User(Connection connection, Scanner sc) {
+    public User(Connection connection, Scanner scanner) {
         this.connection = connection;
-        this.sc = sc;
+        this.scanner = scanner;
     }
-    public void register(){
-        sc.nextLine();
-        System.out.println("Enter your full name : ");
-        String full_name = sc.nextLine();
-        System.out.println("Email : ");
-        String email = sc.nextLine();
-        System.out.println("password : ");
-        String password = sc.nextLine();
 
-        if(user_exist(email)){
-            System.out.println(" User already exists");
+    public void register() {
+        System.out.println("\n========== REGISTRATION ==========");
+
+        System.out.print("Enter your full name: ");
+        String fullName = scanner.nextLine().trim();
+
+        System.out.print("Enter email: ");
+        String email = scanner.nextLine().trim();
+
+        System.out.print("Enter password: ");
+        String password = scanner.nextLine();
+
+        if (fullName.isEmpty() || email.isEmpty() || password.isEmpty()) {
+            System.out.println("Name, email and password cannot be empty.");
             return;
         }
 
-        String register_query = "insert into users ( full_name , email , password) values(?,?,?)";
-        try {
-            PreparedStatement ps = connection.prepareStatement(register_query);
-            ps.setString(1,full_name);
-            ps.setString(2,email);
-            ps.setString(3,password);
-            int rowsaffected = ps.executeUpdate();
-            if(rowsaffected>0){
-                System.out.println("Registration SuccessFull ");
-            }else{
-                System.out.println("Registration Failed ");
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+        if (!email.contains("@") || !email.contains(".")) {
+            System.out.println("Please enter a valid email address.");
+            return;
         }
 
+        if (userExist(email)) {
+            System.out.println("User already exists. Please login.");
+            return;
+        }
 
+        String query = "INSERT INTO users (full_name, email, password) VALUES (?, ?, ?)";
+
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, fullName);
+            ps.setString(2, email);
+            ps.setString(3, password);
+
+            if (ps.executeUpdate() > 0) {
+                System.out.println("Registration successful! You can now login.");
+            } else {
+                System.out.println("Registration failed.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Registration error: " + e.getMessage());
+        }
     }
-    public String login(){
-        sc.nextLine();
+
+    public String login() {
+        System.out.println("\n========== LOGIN ==========");
+
         System.out.print("Email: ");
-        String email = sc.nextLine();
+        String email = scanner.nextLine().trim();
+
         System.out.print("Password: ");
-        String password = sc.nextLine();
-        String login_query = "SELECT * FROM User WHERE email = ? AND password = ?";
-        try{
-            PreparedStatement preparedStatement = connection.prepareStatement(login_query);
-            preparedStatement.setString(1, email);
-            preparedStatement.setString(2, password);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if(resultSet.next()){
-                return email;
-            }else{
-                return null;
-            }
-        }catch (SQLException e){
-            e.printStackTrace();
-        }
-        return null;
+        String password = scanner.nextLine();
 
-    }
+        String query = "SELECT email FROM users WHERE email = ? AND password = ?";
 
-    public  boolean user_exist(String email){
-        String sql = "select * from users where email = ?";
-        try{
-            PreparedStatement ps = connection.prepareStatement(sql);
-            ps.setString(1,email);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()){
-                return  true;
-            }else {
-                return  false;
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, email);
+            ps.setString(2, password);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    System.out.println("Login successful.");
+                    return rs.getString("email");
+                }
             }
 
+            System.out.println("Invalid email or password.");
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            System.out.println("Login error: " + e.getMessage());
         }
+
+        return null;
     }
 
+    public boolean userExist(String email) {
+        String query = "SELECT 1 FROM users WHERE email = ? LIMIT 1";
+
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, email);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            return false;
+        }
+    }
 }
