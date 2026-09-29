@@ -7,99 +7,145 @@ import java.sql.SQLException;
 import java.util.Scanner;
 
 public class Accounts {
-    private Connection connection;
-    private  Scanner sc ;
+    private final Connection connection;
+    private final Scanner scanner;
 
-
-
-    public Accounts(Connection connection, Scanner sc) {
+    public Accounts(Connection connection, Scanner scanner) {
         this.connection = connection;
-        this.sc = sc ;
-
+        this.scanner = scanner;
     }
 
-    public long open_account(String email){
-        if(!account_exist(email)) {
-            String open_account_query = "INSERT INTO Accounts(account_number, full_name, email, balance, security_pin) VALUES(?, ?, ?, ?, ?)";
-            sc.nextLine();
-            System.out.print("Enter Full Name: ");
-            String full_name = sc.nextLine();
-            System.out.print("Enter Initial Amount: ");
-            double balance = sc.nextDouble();
-            sc.nextLine();
-            System.out.print("Enter Security Pin: ");
-            String security_pin = sc.nextLine();
-            try {
-                long account_number =  Generate_accountNo();
-                PreparedStatement preparedStatement = connection.prepareStatement(open_account_query);
-                preparedStatement.setLong(1, account_number);
-                preparedStatement.setString(2, full_name);
-                preparedStatement.setString(3, email);
-                preparedStatement.setDouble(4, balance);
-                preparedStatement.setString(5, security_pin);
-                int rowsAffected = preparedStatement.executeUpdate();
-                if (rowsAffected > 0) {
-                    return account_number;
-                } else {
-                    throw new RuntimeException("Account Creation failed!!");
-                }
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
+    public long openAccount(String email) {
+        if (accountExist(email)) {
+            System.out.println("An account already exists for this email.");
+            return getAccountNumber(email);
         }
-        throw new RuntimeException("Account Already Exist");
 
-    }
+        System.out.println("\n========== CREATE BANK ACCOUNT ==========");
 
+        System.out.print("Enter full name: ");
+        String fullName = scanner.nextLine().trim();
 
-    public long getAccount_number(String email) {
-        String query = "SELECT account_number from Accounts WHERE email = ?";
-        try{
-            PreparedStatement preparedStatement = connection.prepareStatement(query);
-            preparedStatement.setString(1, email);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if(resultSet.next()){
-                return resultSet.getLong("account_number");
-            }
-        }catch (SQLException e){
-            e.printStackTrace();
+        if (fullName.isEmpty()) {
+            System.out.println("Full name cannot be empty.");
+            return -1;
         }
-        throw new RuntimeException("Account Number Doesn't Exist!");
-    }
 
-    private  long Generate_accountNo(){
-        String sql = " SELECT account_number FROM accounts order by account_number DESC limit 1 ";
-        try {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            ResultSet rs = ps.executeQuery();
-            if(rs.next()){
-                long last_accNo = rs.getLong("account_number");
-                return  last_accNo +1 ;
-            }else {
-                return 10000100;
-            }
+        double balance = readAmount("Enter initial amount: ");
+
+        System.out.print("Enter security PIN: ");
+        String securityPin = scanner.nextLine().trim();
+
+        if (securityPin.length() < 4) {
+            System.out.println("Security PIN must contain at least 4 characters.");
+            return -1;
         }
-        catch (SQLException e){
-            System.out.println(e.getMessage());
-        }
-        return 10000100;
 
-    }
+        String query = "INSERT INTO accounts " +
+                "(account_number, full_name, email, balance, security_pin) VALUES (?, ?, ?, ?, ?)";
 
-    public  boolean account_exist(String email){
-        String sql = "SELECT account_number FROM accounts where email = ?";
-        try{
-            PreparedStatement ps = connection.prepareStatement(sql);
-            ps.setString(1 ,email);
-            ResultSet rs = ps.executeQuery();
-            if(rs.next()){
-                return true;
-            }else {
-                return  false ;
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            long accountNumber = generateAccountNumber();
+
+            ps.setLong(1, accountNumber);
+            ps.setString(2, fullName);
+            ps.setString(3, email);
+            ps.setDouble(4, balance);
+            ps.setString(5, securityPin);
+
+            if (ps.executeUpdate() > 0) {
+                return accountNumber;
             }
-
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            System.out.println("Account creation failed: " + e.getMessage());
+        }
+
+        return -1;
+    }
+
+    public long getAccountNumber(String email) {
+        String query = "SELECT account_number FROM accounts WHERE email = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, email);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("account_number");
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to fetch account number: " + e.getMessage());
+        }
+
+        return -1;
+    }
+
+    public boolean accountExist(String email) {
+        String query = "SELECT 1 FROM accounts WHERE email = ? LIMIT 1";
+
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, email);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public void showAccountDetails(long accountNumber) {
+        String query = "SELECT account_number, full_name, email, balance FROM accounts WHERE account_number = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setLong(1, accountNumber);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    System.out.println("\n========== ACCOUNT DETAILS ==========");
+                    System.out.println("Account Number : " + rs.getLong("account_number"));
+                    System.out.println("Full Name      : " + rs.getString("full_name"));
+                    System.out.println("Email          : " + rs.getString("email"));
+                    System.out.printf("Balance        : Rs. %.2f%n", rs.getDouble("balance"));
+                } else {
+                    System.out.println("Account not found.");
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to fetch account details: " + e.getMessage());
+        }
+    }
+
+    private long generateAccountNumber() throws SQLException {
+        String query = "SELECT COALESCE(MAX(account_number), 10000100) + 1 AS next_account FROM accounts";
+
+        try (PreparedStatement ps = connection.prepareStatement(query);
+             ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next()) {
+                return rs.getLong("next_account");
+            }
+        }
+
+        return 10000101;
+    }
+
+    private double readAmount(String message) {
+        while (true) {
+            System.out.print(message);
+            String input = scanner.nextLine().trim();
+
+            try {
+                double amount = Double.parseDouble(input);
+                if (amount >= 0) {
+                    return amount;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+
+            System.out.println("Please enter a valid non-negative amount.");
         }
     }
 }
